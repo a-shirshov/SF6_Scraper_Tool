@@ -10,6 +10,9 @@ import pandas as pd
 from openpyxl import load_workbook
 from selenium.common.exceptions import TimeoutException
 import getpass
+import re
+from openpyxl.styles import PatternFill
+
 
 @dataclass
 class Player:
@@ -25,6 +28,38 @@ def get_credentials():
     username = input("Введите логин: ")
     password = getpass.getpass("Введите пароль: ")
     return username, password
+
+# Function to highlight a row in red
+def highlight_row_red(worksheet, row_number, num_columns):
+    light_red_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # Light red color
+    worksheet.cell(row=row_number, column=1).fill = light_red_fill  # Column 1 corresponds to 'Player Name'
+
+# Function to check if a player should be highlighted
+def should_highlight_player(total_matches, rating_name, min_matches, max_matches, max_rating):
+    if min_matches is not None and total_matches < min_matches:
+        return True
+    if max_matches is not None and total_matches > max_matches:
+        return True
+    if max_rating is not None and rating_name > max_rating:
+        return True
+    return False
+
+def get_criteria_from_user():
+    """Запрашивает у пользователя критерии для проверки игроков. Пользователь может пропустить любое поле."""
+    try:
+        min_matches = input("Введите минимальное количество матчей (x) или оставьте пустым для пропуска: ")
+        max_matches = input("Введите максимальное количество матчей (y) или оставьте пустым для пропуска: ")
+        max_rating = input("Введите максимально допустимый рейтинг (например, 'Diamond 1') или оставьте пустым для пропуска: ")
+        
+        # Преобразуем введенные значения в числовые, если они указаны
+        min_matches = int(min_matches) if min_matches else None
+        max_matches = int(max_matches) if max_matches else None
+        max_rating = max_rating if max_rating else None
+        
+        return min_matches, max_matches, max_rating
+    except ValueError:
+        print("Ошибка ввода. Убедитесь, что вы вводите числовые значения для количества матчей.")
+        return None, None, None
 
 # На сайте рейтинг картинкой - это самое умное и простое имхо
 rating_thresholds = [
@@ -169,7 +204,8 @@ def scrape_player_data(driver, cfn):
     matches_data = []
     matches_elements = section_matches.find_elements(By.TAG_NAME, "dl")
     for matches_element in matches_elements:
-        matches = matches_element.find_element(By.XPATH, './/span[contains(@class, "battle_style_count")]').text
+        matches_str = matches_element.find_element(By.XPATH, './/span[contains(@class, "battle_style_count")]').text
+        matches = int(re.sub(r'\D+', '', matches_str))
         matches_data.append(matches)
 
     #Возвращаем структуру
@@ -256,6 +292,8 @@ if players_cfn:
 else:
     print("Список CFN пуст или произошла ошибка.")
 
+min_matches, max_matches, max_rating = get_criteria_from_user()
+
 
 # Set up the path to geckodriver if it's not in your system's PATH
 geckodriver_path = r".\geckodriver.exe"  # Replace with the actual path on Windows
@@ -311,12 +349,23 @@ df.to_excel(excel_filename, index=False)
 workbook = load_workbook(excel_filename)
 worksheet = workbook.active
 
+num_columns = len(df.columns)
+
 # Keep track of the starting row for each player and merge cells
 current_row = 2  # Since row 1 has headers, start from the second row
 for player in players_data:
+    total_matches = player.matches[0] + player.matches[1] + player.matches[2] + player.matches[3]
+    rating_name = get_rating_name(lp)  # Calculate rating again for highlighting
+
+    # Check if the player should be highlighted
+    highlight = should_highlight_player(total_matches, rating_name, min_matches, max_matches, max_rating)
     # Get the total number of rows for this player's data
     num_phases = sum(len(character_data) for phase, character_data in player.phases.items())
-    
+
+    if highlight:
+            for row in range(current_row, current_row + num_phases):
+                highlight_row_red(worksheet, row, num_columns)
+
     # Merge Player Name cells (Column A)
     worksheet.merge_cells(f'A{current_row}:A{current_row + num_phases - 1}')
     # Merge CFN cells (Column B)
