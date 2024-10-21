@@ -16,6 +16,7 @@ class Player:
     name: str
     cfn: str
     phases: dict
+    matches: list
 
 # Чтение кредов - ввод пароля спрятан  - если вдруг на стрие будет запуск - 
 # для разработки можно не включать и захардкодить креды - либо сделать чтение из файла
@@ -64,13 +65,13 @@ def scrape_player_data(driver, cfn):
     
     #Вот тут xpath вынесен и понятно, что ищем
     player_name_xpath = '/html/body/div[1]/div/article[2]/div/div[1]/section/ul/li[2]/span[2]'
-    WebDriverWait(driver, 10).until(
+    WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.XPATH, player_name_xpath))
     )
     player_name = driver.find_element(By.XPATH, player_name_xpath).text
 
     # Ждём плашки league points
-    WebDriverWait(driver, 10).until(
+    WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/div/article[3]/div/div[1]/aside[1]/div/ul/li[2]'))
     )
     driver.find_element(By.XPATH, "/html/body/div[1]/div/article[3]/div/div[1]/aside[1]/div/ul/li[2]").click()
@@ -129,7 +130,7 @@ def scrape_player_data(driver, cfn):
         except TimeoutException:
             # Если вылезли кукисы - они не дают сканировать - вроде баг пофиксился через time.sleep в конце setup_scraper,наверное можно убрать 
             try:
-                cookie_button = WebDriverWait(driver, 2).until(
+                cookie_button = WebDriverWait(driver, 5).until(
                     EC.element_to_be_clickable((By.XPATH, '//*[@id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"]'))
                 )
                 cookie_button.click()
@@ -154,11 +155,29 @@ def scrape_player_data(driver, cfn):
     # Здесь можно добавить секцию результаты
     # Можно разбить на подфункции
 
+    results_button_xpath  = '/html/body/div[1]/div/article[3]/div/div[1]/aside[1]/div/ul/li[7]'
+    results_button = WebDriverWait(driver, 5).until(
+        EC.element_to_be_clickable((By.XPATH, results_button_xpath))
+    )
+    results_button.click()
+
+    section_matches_xpath = '/html/body/div[1]/div/article[3]/div/div[1]/article/div[3]/div/section[1]'
+    section_matches = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.XPATH, section_matches_xpath))
+    )
+
+    matches_data = []
+    matches_elements = section_matches.find_elements(By.TAG_NAME, "dl")
+    for matches_element in matches_elements:
+        matches = matches_element.find_element(By.XPATH, './/span[contains(@class, "battle_style_count")]').text
+        matches_data.append(matches)
+
     #Возвращаем структуру
     return Player(
         name=player_name,
         cfn=cfn,
-        phases=phases
+        phases=phases,
+        matches=matches_data
     )
 
 def setup_scraper(driver, username, password):
@@ -196,12 +215,12 @@ def setup_scraper(driver, username, password):
     driver.find_element(By.XPATH, "/html/body/div/div/div[2]/form/div/div/div/button").click()
 
     #Ждём когда нас редиректнет с авторизации
-    WebDriverWait(driver, 10).until(EC.url_contains("https://www.streetfighter.com/"))
+    WebDriverWait(driver, 20).until(EC.url_contains("https://www.streetfighter.com/"))
 
     #Ловим кукисы - переходим на Sarpol
     driver.get("https://www.streetfighter.com/6/buckler/ru/profile/2457622556/play")
     try:
-        cookie_button = WebDriverWait(driver, 10).until(
+        cookie_button = WebDriverWait(driver, 20).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"]'))
         )
         cookie_button.click()
@@ -252,6 +271,7 @@ players_data = []
 for cfn in players_cfn:
     player_data = scrape_player_data(driver, cfn)
     players_data.append(player_data)
+    #time.sleep(10000)
 
 #Завершаем работу - для дебага можно писать большой time.Sleep(), чтобы походить и взять xpath и прочее
 driver.quit()
@@ -269,7 +289,11 @@ for player in players_data:
                 'Phase': phase if i == 0 else "",  # Merge phase for the first row
                 'League Point Name': char_name,
                 'League Point LP': lp,
-                'Rating Name': rating_name  # Add the rating name column
+                'Rating Name': rating_name,  # Add the rating name column
+                'Ranked Matches': player.matches[0],
+                'Casual Matches': player.matches[1],
+                'Room Matches': player.matches[2],
+                'Battlehub Matches': player.matches[3]
             })
 
 # Дальше gpt - я не прокоментирую сильно - есть комменты на английском
@@ -297,6 +321,11 @@ for player in players_data:
     worksheet.merge_cells(f'A{current_row}:A{current_row + num_phases - 1}')
     # Merge CFN cells (Column B)
     worksheet.merge_cells(f'B{current_row}:B{current_row + num_phases - 1}')
+
+    worksheet.merge_cells(f'G{current_row}:G{current_row + num_phases - 1}')
+    worksheet.merge_cells(f'H{current_row}:H{current_row + num_phases - 1}')
+    worksheet.merge_cells(f'I{current_row}:I{current_row + num_phases - 1}')
+    worksheet.merge_cells(f'J{current_row}:J{current_row + num_phases - 1}')
     
     # Move to the next player's data
     current_row += num_phases
