@@ -14,6 +14,8 @@ import re
 from openpyxl.styles import PatternFill
 import os
 from dotenv import load_dotenv
+from selenium.common.exceptions import NoSuchElementException
+from openpyxl.utils import get_column_letter
 
 load_dotenv()
 
@@ -23,6 +25,7 @@ class Player:
     cfn: str
     phases: dict
     matches: list
+    max_lp: int
 
 # Function to highlight a row in red
 def highlight_row_red(worksheet, row_number, num_columns):
@@ -30,12 +33,12 @@ def highlight_row_red(worksheet, row_number, num_columns):
     worksheet.cell(row=row_number, column=1).fill = light_red_fill  # Column 1 corresponds to 'Player Name'
 
 # Function to check if a player should be highlighted
-def should_highlight_player(total_matches, rating_name, min_matches, max_matches, max_rating):
+def should_highlight_player(total_matches, max_lp, min_matches, max_matches, max_rating):
     if min_matches is not None and total_matches < min_matches:
         return True
     if max_matches is not None and total_matches > max_matches:
         return True
-    if max_rating is not None and rating_name > max_rating:
+    if max_rating is not None and max_lp > max_rating:
         return True
     return False
 
@@ -44,12 +47,12 @@ def get_criteria_from_user():
     try:
         min_matches = input("Введите минимальное количество матчей (x) или оставьте пустым для пропуска: ")
         max_matches = input("Введите максимальное количество матчей (y) или оставьте пустым для пропуска: ")
-        max_rating = input("Введите максимально допустимый рейтинг (например, 'Diamond 1') или оставьте пустым для пропуска: ")
+        max_rating = input("Введите максимально допустимый кол-во очков (например, 19000) или оставьте пустым для пропуска: ")
         
         # Преобразуем введенные значения в числовые, если они указаны
         min_matches = int(min_matches) if min_matches else None
         max_matches = int(max_matches) if max_matches else None
-        max_rating = max_rating if max_rating else None
+        max_rating =  int(max_rating) if max_rating else None
         
         return min_matches, max_matches, max_rating
     except ValueError:
@@ -57,36 +60,34 @@ def get_criteria_from_user():
         return None, None, None
 
 # На сайте рейтинг картинкой - это самое умное и простое имхо
-rating_thresholds = [
-    (25_000, "Master"),
-    (23_800, "Diamond 5"),
-    (22_600, "Diamond 4"),
-    (21_400, "Diamond 3"),
-    (20_200, "Diamond 2"),
-    (19_000, "Diamond 1"),
-    (17_800, "Platinum 5"),
-    (16_600, "Platinum 4"),
-    (15_400, "Platinum 3"),
-    (14_200, "Platinum 2"),
-    (13_000, "Platinum 1"),
-    (12_200, "Gold 5"),
-    (11_400, "Gold 4"),
-    (10_600, "Gold 3"),
-    (9_800,  "Gold 2"),
-    (0,      "Gold 1")  # Default rating for LPs below 9800
-]
+rank_thresholds = {
+    "Rookie 1": 0, "Rookie 2": 200, "Rookie 3": 400, "Rookie 4": 600, "Rookie 5": 800,
+    "Iron 1": 1000, "Iron 2": 1400, "Iron 3": 1800, "Iron 4": 2200, "Iron 5": 2600,
+    "Bronze 1": 3000, "Bronze 2": 3400, "Bronze 3": 3800, "Bronze 4": 4200, "Bronze 5": 4600,
+    "Silver 1": 5000, "Silver 2": 5800, "Silver 3": 6600, "Silver 4": 7400, "Silver 5": 8200,
+    "Gold 1": 9000, "Gold 2": 9800, "Gold 3": 10600, "Gold 4": 11400, "Gold 5": 12200,
+    "Platinum 1": 13000, "Platinum 2": 14200, "Platinum 3": 15400, "Platinum 4": 16600, "Platinum 5": 17800,
+    "Diamond 1": 19000, "Diamond 2": 20200, "Diamond 3": 21400, "Diamond 4": 22600, "Diamond 5": 23800,
+    "Master": 25000
+}
+
+def clearOL(lp):
+    try:
+        numeric_part = re.sub(r'\D', '', lp)  # Remove all non-digit characters
+        lp_value = int(numeric_part)
+    except (ValueError, AttributeError):
+        return None
+    return lp_value
 
 def get_rating_name(lp):
-    try:
-        cleaned_lp = lp.replace(" ", "")
-        cleaned_lp = cleaned_lp[:len(cleaned_lp)-2]
-        lp_value = int(cleaned_lp)
-    except (ValueError, AttributeError) as e:
+    lp_value = clearOL(lp)
+    if lp_value is None:
         return "Unknown"
 
-    for threshold, rating in rating_thresholds:
+    # Find the highest rank that doesn't exceed lp_value
+    for rank, threshold in sorted(rank_thresholds.items(), key=lambda x: x[1], reverse=True):
         if lp_value >= threshold:
-            return rating
+            return rank
 
     return "Unknown"
 
@@ -101,7 +102,15 @@ def scrape_player_data(driver, cfn):
         print(f'Not a cfn: {cfn}')
         return
     driver.get(f"https://www.streetfighter.com/6/buckler/ru/profile/{cfn}/play")
-    
+    try:
+    # Example 1: Check for a specific element or text that only appears on the 404 page
+        driver.find_element(By.XPATH, "//*[contains(@class, 'not_exsist__')]")
+        bad_players.append(cfn)
+        print("404 page detected")
+        return
+    except NoSuchElementException:
+        pass
+
     #Вот тут xpath вынесен и понятно, что ищем
     player_name_xpath = '/html/body/div[1]/div/article[2]/div/div[1]/section/ul/li[2]/span[2]'
     WebDriverWait(driver, 20).until(
@@ -144,6 +153,7 @@ def scrape_player_data(driver, cfn):
     phases = {}
 
     # Iterate over each option
+    max_lp = 0
     for option in phase_select.options:
         # лучшее за всё время вроде имеет значение -1, а последняя фаза самое большое
         # Вот value за это отвечает
@@ -186,6 +196,9 @@ def scrape_player_data(driver, cfn):
         for li in li_elements:
             league_point_name = li.find_element(By.XPATH, './/p[contains(@class, "league_point_name")]').text
             league_point_lp = li.find_element(By.XPATH, './/p[contains(@class, "league_point_lp")]').text
+            cleared_lp = clearOL(league_point_lp)
+            if cleared_lp is not None:
+                max_lp = max(max_lp, cleared_lp)
             top_league_point_names.append(league_point_name)
             top_league_point_lps.append(league_point_lp)
 
@@ -217,7 +230,8 @@ def scrape_player_data(driver, cfn):
         name=player_name,
         cfn=cfn,
         phases=phases,
-        matches=matches_data
+        matches=matches_data,
+        max_lp=max_lp
     )
 
 def setup_scraper(driver, username, password):
@@ -240,11 +254,13 @@ def setup_scraper(driver, username, password):
     # Все xpath лучше вынести в переменные - а то не понятно, что это такое + так легче переиспользовать
     driver.find_element(By.XPATH, "/html/body/div[2]/main/div/section/form/article/div/div[3]/div[1]/button").click()
 
-    # Вроде ждём загрузки - надо наверное поменять, на динамическое ожидание, если получится
-    time.sleep(2)
+    email_login_XPATH = '//*[@id="1-email"]'
+    WebDriverWait(driver, 20).until(
+        EC.element_to_be_clickable((By.XPATH, email_login_XPATH))
+    )
 
     # Пишем креды
-    login_field = driver.find_element(By.XPATH, '//*[@id="1-email"]')
+    login_field = driver.find_element(By.XPATH, email_login_XPATH)
     login_field.send_keys(username)
 
     password_field = driver.find_element(By.XPATH, '/html/body/div/div/div[2]/form/div/div/div/div/div[2]/div[2]/span/div/div/div/div/div/div/div/div/div[2]/div/div[2]/div/div/input')
@@ -291,7 +307,7 @@ def read_cfn_from_csv(filename):
 
 # ОСНОВНОЙ КОД ПРОГРАММЫ - Я ХЗ КАК MAIN В PYTHON сделать 
 
-filename =  r"kingofplat4-2024-11-12.csv"
+filename =  os.environ.get('PATH_TO_CSV')
 players_cfn = read_cfn_from_csv(filename)
 if players_cfn:
     print("CFN успешно загружены:")
@@ -366,17 +382,16 @@ num_columns = len(df.columns)
 # Keep track of the starting row for each player and merge cells
 current_row = 2  # Since row 1 has headers, start from the second row
 for player in players_data:
-    total_matches = player.matches[0] + player.matches[1] + player.matches[2] + player.matches[3]
-    rating_name = get_rating_name(lp)  # Calculate rating again for highlighting
-
+    total_matches = sum(player.matches)
     # Check if the player should be highlighted
-    #highlight = should_highlight_player(total_matches, rating_name, min_matches, max_matches, max_rating)
-    # Get the total number of rows for this player's data
+    max_lp = player.max_lp
+    highlight = should_highlight_player(total_matches, max_lp, min_matches, max_matches, max_rating)
+
     num_phases = sum(len(character_data) for phase, character_data in player.phases.items())
 
-    # if highlight:
-    #         for row in range(current_row, current_row + num_phases):
-    #             highlight_row_red(worksheet, row, num_columns)
+    if highlight:
+            for row in range(current_row, current_row + num_phases):
+                highlight_row_red(worksheet, row, num_columns)
 
     # Merge Player Name cells (Column A)
     worksheet.merge_cells(f'A{current_row}:A{current_row + num_phases - 1}')
@@ -390,6 +405,21 @@ for player in players_data:
     
     # Move to the next player's data
     current_row += num_phases
+
+# Set column widths to auto-adjust based on maximum content length
+for col in worksheet.columns:
+    max_length = 0
+    col_letter = get_column_letter(col[0].column)  # Get the column letter
+    for cell in col:
+        try:
+            # Measure the length of each cell value
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+        except:
+            pass
+    # Adjust column width based on the maximum content length, with a buffer
+    adjusted_width = (max_length + 2)  # Add some extra space for readability
+    worksheet.column_dimensions[col_letter].width = adjusted_width
 
 # Save the workbook after merging
 workbook.save(excel_filename)
