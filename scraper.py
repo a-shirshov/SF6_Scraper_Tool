@@ -12,7 +12,10 @@ from selenium.common.exceptions import TimeoutException
 import getpass
 import re
 from openpyxl.styles import PatternFill
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 @dataclass
 class Player:
@@ -20,14 +23,6 @@ class Player:
     cfn: str
     phases: dict
     matches: list
-
-# Чтение кредов - ввод пароля спрятан  - если вдруг на стрие будет запуск - 
-# для разработки можно не включать и захардкодить креды - либо сделать чтение из файла
-def get_credentials():
-    """Запрашивает логин и пароль у пользователя через консоль."""
-    username = input("Введите логин: ")
-    password = getpass.getpass("Введите пароль: ")
-    return username, password
 
 # Function to highlight a row in red
 def highlight_row_red(worksheet, row_number, num_columns):
@@ -296,8 +291,8 @@ def read_cfn_from_csv(filename):
 
 # ОСНОВНОЙ КОД ПРОГРАММЫ - Я ХЗ КАК MAIN В PYTHON сделать 
 
-filename =  r".\cfn_list.txt"
-players_cfn = read_cfn_from_csv(".\kingofplat4-2024-11-11.csv")
+filename =  r"kingofplat4-2024-11-12.csv"
+players_cfn = read_cfn_from_csv(filename)
 if players_cfn:
     print("CFN успешно загружены:")
     print(players_cfn)
@@ -308,10 +303,11 @@ min_matches, max_matches, max_rating = get_criteria_from_user()
 
 
 # Set up the path to geckodriver if it's not in your system's PATH
-geckodriver_path = r".\geckodriver.exe"  # Replace with the actual path on Windows
+geckodriver_path = os.environ.get('GECKODRIVER_PATH')  # Replace with the actual OS path
 service = Service(geckodriver_path)
 
-username, password = get_credentials()
+username = os.environ.get('CAPCOM_LOGIN')
+password = os.environ.get('CAPCOM_PASSWORD')
 # Initialize the Firefox WebDriver
 driver = webdriver.Firefox(service=service)
 setup_scraper(driver, username, password)
