@@ -45,9 +45,9 @@ def should_highlight_player(total_matches, max_lp, min_matches, max_matches, max
 def get_criteria_from_user():
     """Запрашивает у пользователя критерии для проверки игроков. Пользователь может пропустить любое поле."""
     try:
-        min_matches = input("Введите минимальное количество матчей (x) или оставьте пустым для пропуска: ")
-        max_matches = input("Введите максимальное количество матчей (y) или оставьте пустым для пропуска: ")
-        max_rating = input("Введите максимально допустимый кол-во очков (например, 19000) или оставьте пустым для пропуска: ")
+        min_matches = input("Введите минимальное количество раундов (x) или оставьте пустым для пропуска: ")
+        max_matches = input("Введите максимальное количество раундов (y) или оставьте пустым для пропуска: ")
+        max_rating = input("Введите максимально допустимое кол-во очков (например, 19000) или оставьте пустым для пропуска: ")
         
         # Преобразуем введенные значения в числовые, если они указаны
         min_matches = int(min_matches) if min_matches else None
@@ -98,14 +98,15 @@ def scrape_player_data(driver, cfn):
         cfn_int = int(cfn)
         print(cfn_int)
     except ValueError:
-        bad_players.append(cfn)
+        challonge_nickname = df_players.loc[df_players["CFN ЧИСЛОВОЙ Код игрока"] == cfn, "Participant Username"].values[0]
+        bad_players.append((cfn, challonge_nickname))
         print(f'Not a cfn: {cfn}')
         return
     driver.get(f"https://www.streetfighter.com/6/buckler/ru/profile/{cfn}/play")
     try:
-    # Example 1: Check for a specific element or text that only appears on the 404 page
         driver.find_element(By.XPATH, "//*[contains(@class, 'not_exsist__')]")
-        bad_players.append(cfn)
+        challonge_nickname = df_players.loc[df_players["CFN ЧИСЛОВОЙ Код игрока"] == cfn, "Participant Username"].values[0]
+        bad_players.append((cfn, challonge_nickname))
         print("404 page detected")
         return
     except NoSuchElementException:
@@ -287,6 +288,7 @@ def setup_scraper(driver, username, password):
     # Если не подождать, кукисы снова спросит - наверное, мы не успеваем их получить и быстро убегаем, если убрать
     time.sleep(2)
 
+#Deprecated
 def read_cfn_from_file(filename):
     """Чтение CFN имен из текстового файла. Один CFN на строку."""
     try:
@@ -300,15 +302,11 @@ def read_cfn_from_file(filename):
         print(f"Произошла ошибка при чтении файла: {e}")
         return []
 
-def read_cfn_from_csv(filename):
-    df_players = pd.read_csv(filename)
-    players_list = df_players["CFN ЧИСЛОВОЙ Код игрока"].to_list()
-    return players_list
-
 # ОСНОВНОЙ КОД ПРОГРАММЫ - Я ХЗ КАК MAIN В PYTHON сделать 
 
 filename =  os.environ.get('PATH_TO_CSV')
-players_cfn = read_cfn_from_csv(filename)
+df_players = pd.read_csv(filename)
+players_cfn = df_players["CFN ЧИСЛОВОЙ Код игрока"].to_list()
 if players_cfn:
     print("CFN успешно загружены:")
     print(players_cfn)
@@ -339,7 +337,7 @@ for cfn in players_cfn:
 #Завершаем работу - для дебага можно писать большой time.Sleep(), чтобы походить и взять xpath и прочее
 driver.quit()
 
-df = pd.DataFrame(bad_players, columns=["Wrong CFN"])
+df = pd.DataFrame(bad_players, columns=["Wrong CFN", "Bad player Nickname"])
 df.to_csv('bad_players.csv', index=False)
 
 #EXCEL
@@ -383,9 +381,13 @@ num_columns = len(df.columns)
 current_row = 2  # Since row 1 has headers, start from the second row
 for player in players_data:
     total_matches = sum(player.matches)
+
     # Check if the player should be highlighted
     max_lp = player.max_lp
     highlight = should_highlight_player(total_matches, max_lp, min_matches, max_matches, max_rating)
+    challonge_nickname = df_players.loc[df_players["CFN ЧИСЛОВОЙ Код игрока"] == player.cfn, "Participant Username"].values[0]
+    if challonge_nickname.lower() != player.name.lower():
+        highlight = True
 
     num_phases = sum(len(character_data) for phase, character_data in player.phases.items())
 
