@@ -95,7 +95,16 @@ def get_rating_name(lp):
 
     return "Unknown"
 
+bad_players = []
+
 def scrape_player_data(driver, cfn):
+    try:
+        cfn_int = int(cfn)
+        print(cfn_int)
+    except ValueError:
+        bad_players.append(cfn)
+        print(f'Not a cfn: {cfn}')
+        return
     driver.get(f"https://www.streetfighter.com/6/buckler/ru/profile/{cfn}/play")
     
     #Вот тут xpath вынесен и понятно, что ищем
@@ -280,12 +289,15 @@ def read_cfn_from_file(filename):
         print(f"Произошла ошибка при чтении файла: {e}")
         return []
 
-
+def read_cfn_from_csv(filename):
+    df_players = pd.read_csv(filename)
+    players_list = df_players["CFN ЧИСЛОВОЙ Код игрока"].to_list()
+    return players_list
 
 # ОСНОВНОЙ КОД ПРОГРАММЫ - Я ХЗ КАК MAIN В PYTHON сделать 
 
 filename =  r".\cfn_list.txt"
-players_cfn = read_cfn_from_file(filename)
+players_cfn = read_cfn_from_csv(".\kingofplat4-2024-11-11.csv")
 if players_cfn:
     print("CFN успешно загружены:")
     print(players_cfn)
@@ -308,11 +320,15 @@ setup_scraper(driver, username, password)
 players_data = []
 for cfn in players_cfn:
     player_data = scrape_player_data(driver, cfn)
-    players_data.append(player_data)
+    if player_data != None:
+        players_data.append(player_data)
     #time.sleep(10000)
 
 #Завершаем работу - для дебага можно писать большой time.Sleep(), чтобы походить и взять xpath и прочее
 driver.quit()
+
+df = pd.DataFrame(bad_players, columns=["Wrong CFN"])
+df.to_csv('bad_players.csv', index=False)
 
 #EXCEL
 #Подготовка к работе с excel - здесь gpt помог сильно 
@@ -358,13 +374,13 @@ for player in players_data:
     rating_name = get_rating_name(lp)  # Calculate rating again for highlighting
 
     # Check if the player should be highlighted
-    highlight = should_highlight_player(total_matches, rating_name, min_matches, max_matches, max_rating)
+    #highlight = should_highlight_player(total_matches, rating_name, min_matches, max_matches, max_rating)
     # Get the total number of rows for this player's data
     num_phases = sum(len(character_data) for phase, character_data in player.phases.items())
 
-    if highlight:
-            for row in range(current_row, current_row + num_phases):
-                highlight_row_red(worksheet, row, num_columns)
+    # if highlight:
+    #         for row in range(current_row, current_row + num_phases):
+    #             highlight_row_red(worksheet, row, num_columns)
 
     # Merge Player Name cells (Column A)
     worksheet.merge_cells(f'A{current_row}:A{current_row + num_phases - 1}')
