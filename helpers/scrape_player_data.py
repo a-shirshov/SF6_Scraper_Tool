@@ -16,6 +16,7 @@ class Player:
     phases: dict
     matches: list
     max_lp: int
+    played_time: list
 
 def scrape_player_data(driver, cfn, df_players, bad_players):
     try:
@@ -150,11 +151,32 @@ def scrape_player_data(driver, cfn, df_players, bad_players):
         matches = int(re.sub(r'\D+', '', matches_str))
         matches_data.append(matches)
 
+
+    profile_button_xpath = '/html/body/div[1]/div/aside[2]/div/ul/li[1]'
+    profile_button = WebDriverWait(driver, 5).until(
+        EC.element_to_be_clickable((By.XPATH, profile_button_xpath))
+    )
+    profile_button.click()
+
+    time_section_xpath = '/html/body/div[1]/div/article[3]/div/div/div[2]/article[1]/section[3]'
+    time_section = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.XPATH, time_section_xpath))
+    )
+    time_elements = time_section.find_elements(By.TAG_NAME, "dl")
+
+    played_time_list = []
+
+    for time_element in time_elements:
+        played_time = time_element.find_elements(By.TAG_NAME, "dd")[0].text
+        print(played_time)
+        played_time_list.append(played_time)
+
     #Возвращаем структуру
     return Player(
         name=player_name,
         cfn=cfn,
         phases=phases,
         matches=matches_data,
-        max_lp=max_lp
+        max_lp=max_lp,
+        played_time=played_time_list
     )

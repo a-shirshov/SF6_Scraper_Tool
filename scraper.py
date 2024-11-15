@@ -72,7 +72,10 @@ for player in players_data:
                 'Ranked Matches': player.matches[0],
                 'Casual Matches': player.matches[1],
                 'Room Matches': player.matches[2],
-                'Battlehub Matches': player.matches[3]
+                'Battlehub Matches': player.matches[3],
+                'Ranked Time': player.played_time[0],
+                'Practice Time': player.played_time[1],
+                'Custom Room Time': player.played_time[2]
             })
 
 # Дальше gpt - я не прокоментирую сильно - есть комменты на английском
@@ -119,6 +122,10 @@ for player in players_data:
     worksheet.merge_cells(f'H{current_row}:H{current_row + num_phases - 1}')
     worksheet.merge_cells(f'I{current_row}:I{current_row + num_phases - 1}')
     worksheet.merge_cells(f'J{current_row}:J{current_row + num_phases - 1}')
+
+    worksheet.merge_cells(f'K{current_row}:K{current_row + num_phases - 1}')
+    worksheet.merge_cells(f'L{current_row}:L{current_row + num_phases - 1}')
+    worksheet.merge_cells(f'M{current_row}:M{current_row + num_phases - 1}')
     
     # Move to the next player's data
     current_row += num_phases
